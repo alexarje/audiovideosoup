@@ -17,6 +17,7 @@ const state = {
   frameBuffer: null,
   frameCanvas: null,
   visualDecay: 0.985,
+  visualMix: 0.75,
   spectralSmooth: 0.965,
   phaseSmooth: 0.92,
   phaseDrift: 0.0008,
@@ -41,12 +42,14 @@ function bindElements() {
   els.timeLabel = $("time-label");
   els.statusLabel = $("status-label");
   els.visualDecay = $("visual-decay");
+  els.visualMix = $("visual-mix");
   els.spectralSmooth = $("spectral-smooth");
   els.phaseSmooth = $("phase-smooth");
   els.phaseDrift = $("phase-drift");
   els.audioMix = $("audio-mix");
   els.audioGain = $("audio-gain");
   els.visualDecayVal = $("visual-decay-val");
+  els.visualMixVal = $("visual-mix-val");
   els.spectralSmoothVal = $("spectral-smooth-val");
   els.phaseSmoothVal = $("phase-smooth-val");
   els.phaseDriftVal = $("phase-drift-val");
@@ -67,6 +70,7 @@ function setStatus(text) {
 
 function updateSliderLabels() {
   els.visualDecayVal.textContent = `${Math.round(state.visualDecay * 1000) / 10}%`;
+  els.visualMixVal.textContent = `${Math.round(state.visualMix * 100)}%`;
   els.spectralSmoothVal.textContent = `${Math.round(state.spectralSmooth * 1000) / 10}%`;
   els.phaseSmoothVal.textContent = `${Math.round(state.phaseSmooth * 1000) / 10}%`;
   els.phaseDriftVal.textContent = state.phaseDrift.toFixed(4);
@@ -132,10 +136,12 @@ function blendFrame(sourceCtx, width, height) {
     accum[px + 2] = accum[px + 2] * decay + b * blend;
   }
 
+  const mix = state.visualMix;
+  const invMix = 1 - mix;
   for (let i = 0, px = 0; i < data.length; i += 4, px += 3) {
-    out[i] = accum[px];
-    out[i + 1] = accum[px + 1];
-    out[i + 2] = accum[px + 2];
+    out[i] = accum[px] * mix + data[i] * invMix;
+    out[i + 1] = accum[px + 1] * mix + data[i + 1] * invMix;
+    out[i + 2] = accum[px + 2] * mix + data[i + 2] * invMix;
     out[i + 3] = 255;
   }
 
@@ -148,7 +154,11 @@ function drawSoupFrame() {
   if (!video.videoWidth) return;
   const width = video.videoWidth;
   const height = video.videoHeight;
-  if (els.soupCanvas.width !== width) {
+  if (
+    els.soupCanvas.width !== width
+    || els.soupCanvas.height !== height
+    || !state.frameCanvas
+  ) {
     resizeSoupCanvas(width, height);
   }
   const frameCtx = state.frameCanvas.getContext("2d");
@@ -299,6 +309,7 @@ function bindControls() {
 
   const sliders = [
     ["visualDecay", "visual-decay", (v) => { state.visualDecay = v; }],
+    ["visualMix", "visual-mix", (v) => { state.visualMix = v; }],
     ["spectralSmooth", "spectral-smooth", (v) => { state.spectralSmooth = v; postSoupParam("spectralSmooth", v); }],
     ["phaseSmooth", "phase-smooth", (v) => { state.phaseSmooth = v; postSoupParam("phaseSmooth", v); }],
     ["phaseDrift", "phase-drift", (v) => { state.phaseDrift = v; postSoupParam("phaseDrift", v); }],
@@ -314,6 +325,10 @@ function bindControls() {
       updateSliderLabels();
     });
   }
+
+  els.video.addEventListener("loadeddata", () => {
+    drawSoupFrame();
+  });
 
   els.video.addEventListener("ended", () => {
     state.playing = false;
