@@ -1,6 +1,6 @@
 # AudioVideoSoup
 
-This is a browser app that turns an audio–video recording into a drifting "soup" by averaging video frames visually and smoothing the audio spectrum in real time.
+[AudioVideoSoup](https://alexarje.github.io/audiovideosoup/) is a browser app that turns an audio–video recording into a drifting "soup" by averaging video frames visually and smoothing the audio spectrum in real time.
 
 Load a video file, hit play, and watch the image smear into a running average while the sound blurs into an ambient wash.
 
@@ -29,17 +29,6 @@ Then open [http://localhost:8080](http://localhost:8080) in a modern browser.
 ## GitHub Pages
 
 The site deploys automatically from the `app/` folder when changes are pushed to `main`.
-
-**One-time repo setup:**
-
-1. Open **Settings → Pages** in the GitHub repo
-2. Under **Build and deployment**, set **Source** to **GitHub Actions**
-
-After the first successful workflow run, the site is live at:
-
-**https://alexarje.github.io/audiovideosoup/**
-
-To deploy manually, run the **Deploy to GitHub Pages** workflow from the **Actions** tab.
 
 ## Controls
 
