@@ -15,8 +15,8 @@ const state = {
   accumWidth: 0,
   accumHeight: 0,
   frameBuffer: null,
+  frameCanvas: null,
   visualDecay: 0.985,
-  visualMix: 0.75,
   spectralSmooth: 0.965,
   phaseSmooth: 0.92,
   phaseDrift: 0.0008,
@@ -36,20 +36,17 @@ function bindElements() {
   els.playBtn = $("play-btn");
   els.resetBtn = $("reset-btn");
   els.video = $("source-video");
-  els.previewCanvas = $("preview-canvas");
   els.soupCanvas = $("soup-canvas");
   els.spectrumCanvas = $("spectrum-canvas");
   els.timeLabel = $("time-label");
   els.statusLabel = $("status-label");
   els.visualDecay = $("visual-decay");
-  els.visualMix = $("visual-mix");
   els.spectralSmooth = $("spectral-smooth");
   els.phaseSmooth = $("phase-smooth");
   els.phaseDrift = $("phase-drift");
   els.audioMix = $("audio-mix");
   els.audioGain = $("audio-gain");
   els.visualDecayVal = $("visual-decay-val");
-  els.visualMixVal = $("visual-mix-val");
   els.spectralSmoothVal = $("spectral-smooth-val");
   els.phaseSmoothVal = $("phase-smooth-val");
   els.phaseDriftVal = $("phase-drift-val");
@@ -70,7 +67,6 @@ function setStatus(text) {
 
 function updateSliderLabels() {
   els.visualDecayVal.textContent = `${Math.round(state.visualDecay * 1000) / 10}%`;
-  els.visualMixVal.textContent = `${Math.round(state.visualMix * 100)}%`;
   els.spectralSmoothVal.textContent = `${Math.round(state.spectralSmooth * 1000) / 10}%`;
   els.phaseSmoothVal.textContent = `${Math.round(state.phaseSmooth * 1000) / 10}%`;
   els.phaseDriftVal.textContent = state.phaseDrift.toFixed(4);
@@ -97,11 +93,14 @@ function resetAudioSoup() {
   drawSpectrum(new Float32Array(128));
 }
 
-function resizeCanvases(width, height) {
-  for (const canvas of [els.previewCanvas, els.soupCanvas]) {
-    canvas.width = width;
-    canvas.height = height;
+function resizeSoupCanvas(width, height) {
+  els.soupCanvas.width = width;
+  els.soupCanvas.height = height;
+  if (!state.frameCanvas) {
+    state.frameCanvas = document.createElement("canvas");
   }
+  state.frameCanvas.width = width;
+  state.frameCanvas.height = height;
   resetVisualSoup();
 }
 
@@ -133,12 +132,10 @@ function blendFrame(sourceCtx, width, height) {
     accum[px + 2] = accum[px + 2] * decay + b * blend;
   }
 
-  const mix = state.visualMix;
-  const invMix = 1 - mix;
   for (let i = 0, px = 0; i < data.length; i += 4, px += 3) {
-    out[i] = accum[px] * mix + data[i] * invMix;
-    out[i + 1] = accum[px + 1] * mix + data[i + 1] * invMix;
-    out[i + 2] = accum[px + 2] * mix + data[i + 2] * invMix;
+    out[i] = accum[px];
+    out[i + 1] = accum[px + 1];
+    out[i + 2] = accum[px + 2];
     out[i + 3] = 255;
   }
 
@@ -146,17 +143,17 @@ function blendFrame(sourceCtx, width, height) {
   soupCtx.putImageData(new ImageData(out, width, height), 0, 0);
 }
 
-function drawPreview() {
+function drawSoupFrame() {
   const video = els.video;
   if (!video.videoWidth) return;
   const width = video.videoWidth;
   const height = video.videoHeight;
-  if (els.previewCanvas.width !== width || els.soupCanvas.width !== width) {
-    resizeCanvases(width, height);
+  if (els.soupCanvas.width !== width) {
+    resizeSoupCanvas(width, height);
   }
-  const previewCtx = els.previewCanvas.getContext("2d");
-  previewCtx.drawImage(video, 0, 0, width, height);
-  blendFrame(previewCtx, width, height);
+  const frameCtx = state.frameCanvas.getContext("2d");
+  frameCtx.drawImage(video, 0, 0, width, height);
+  blendFrame(frameCtx, width, height);
 }
 
 function drawSpectrum(magnitudes) {
@@ -190,7 +187,7 @@ function drawSpectrum(magnitudes) {
 
 function animationLoop() {
   if (!state.playing) return;
-  drawPreview();
+  drawSoupFrame();
   els.timeLabel.textContent = `${formatTime(els.video.currentTime)} / ${formatTime(els.video.duration)}`;
   state.rafId = requestAnimationFrame(animationLoop);
 }
@@ -235,7 +232,7 @@ async function loadFile(file) {
     els.video.onerror = reject;
   });
 
-  resizeCanvases(els.video.videoWidth, els.video.videoHeight);
+  resizeSoupCanvas(els.video.videoWidth, els.video.videoHeight);
   resetAudioSoup();
   els.playBtn.disabled = false;
   els.resetBtn.disabled = false;
@@ -302,7 +299,6 @@ function bindControls() {
 
   const sliders = [
     ["visualDecay", "visual-decay", (v) => { state.visualDecay = v; }],
-    ["visualMix", "visual-mix", (v) => { state.visualMix = v; }],
     ["spectralSmooth", "spectral-smooth", (v) => { state.spectralSmooth = v; postSoupParam("spectralSmooth", v); }],
     ["phaseSmooth", "phase-smooth", (v) => { state.phaseSmooth = v; postSoupParam("phaseSmooth", v); }],
     ["phaseDrift", "phase-drift", (v) => { state.phaseDrift = v; postSoupParam("phaseDrift", v); }],
@@ -327,7 +323,7 @@ function bindControls() {
   });
 
   els.video.addEventListener("seeked", () => {
-    if (!state.playing) drawPreview();
+    if (!state.playing) drawSoupFrame();
   });
 }
 

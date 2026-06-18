@@ -35,7 +35,6 @@ The site deploys automatically from the `app/` folder when changes are pushed to
 | Control | What it does |
 | --- | --- |
 | Frame memory | How long visual frames linger in the average (higher = slower fade) |
-| Soup blend | Mix between the averaged image and the current frame |
 | Spectral smooth | How quickly the magnitude spectrum adapts |
 | Phase smooth | How quickly phase information changes |
 | Phase drift | Random phase wander for a more ambient texture |
