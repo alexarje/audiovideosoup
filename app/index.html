@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Kistefos Soup</title>
+    <base id="app-base" href="/" />
+    <script>
+      (function () {
+        var path = location.pathname;
+        if (!path.endsWith("/")) {
+          path = path.includes(".") ? path.slice(0, path.lastIndexOf("/") + 1) : path + "/";
+        }
+        document.getElementById("app-base").href = path || "/";
+      })();
+    </script>
+    <link rel="stylesheet" href="css/style.css" />
+  </head>
+  <body>
+    <div class="app">
+      <header class="topbar">
+        <div class="brand">
+          <span class="brand-mark">KS</span>
+          <div>
+            <h1>Kistefos Soup</h1>
+            <p>Visual frame average · spectral audio drift</p>
+          </div>
+        </div>
+        <div class="topbar-actions">
+          <input id="file-input" type="file" accept="video/*,audio/*" hidden />
+          <button id="load-btn" class="btn">Load media</button>
+          <button id="play-btn" class="btn btn-primary" disabled>Play</button>
+          <button id="reset-btn" class="btn" disabled>Reset soup</button>
+        </div>
+      </header>
+
+      <main class="stage">
+        <section class="panel panel-soup">
+          <div class="panel-head">
+            <h2>Visual soup</h2>
+            <span>Running frame average</span>
+          </div>
+          <canvas id="soup-canvas" width="960" height="540"></canvas>
+        </section>
+
+        <section class="panel panel-preview">
+          <div class="panel-head">
+            <h2>Source</h2>
+            <span id="time-label">0:00 / 0:00</span>
+          </div>
+          <canvas id="preview-canvas" width="960" height="540"></canvas>
+          <video id="source-video" playsinline crossorigin="anonymous" hidden></video>
+        </section>
+      </main>
+
+      <section class="panel panel-spectrum">
+        <div class="panel-head">
+          <h2>Spectral soup</h2>
+          <span>smoothed magnitude average</span>
+        </div>
+        <canvas id="spectrum-canvas"></canvas>
+      </section>
+
+      <section class="controls">
+        <div class="control-group">
+          <h3>Visual</h3>
+          <label>
+            <span>Frame memory <strong id="visual-decay-val">98.5%</strong></span>
+            <input id="visual-decay" type="range" min="0.9" max="0.999" step="0.001" value="0.985" />
+          </label>
+          <label>
+            <span>Soup blend <strong id="visual-mix-val">75%</strong></span>
+            <input id="visual-mix" type="range" min="0" max="1" step="0.01" value="0.75" />
+          </label>
+        </div>
+
+        <div class="control-group">
+          <h3>Audio</h3>
+          <label>
+            <span>Spectral smooth <strong id="spectral-smooth-val">96.5%</strong></span>
+            <input id="spectral-smooth" type="range" min="0.85" max="0.995" step="0.001" value="0.965" />
+          </label>
+          <label>
+            <span>Phase smooth <strong id="phase-smooth-val">92%</strong></span>
+            <input id="phase-smooth" type="range" min="0.5" max="0.99" step="0.001" value="0.92" />
+          </label>
+          <label>
+            <span>Phase drift <strong id="phase-drift-val">0.0008</strong></span>
+            <input id="phase-drift" type="range" min="0" max="0.01" step="0.0001" value="0.0008" />
+          </label>
+          <label>
+            <span>Soup mix <strong id="audio-mix-val">55%</strong></span>
+            <input id="audio-mix" type="range" min="0" max="1" step="0.01" value="0.55" />
+          </label>
+          <label>
+            <span>Output gain <strong id="audio-gain-val">1.10</strong></span>
+            <input id="audio-gain" type="range" min="0.2" max="2" step="0.05" value="1.1" />
+          </label>
+        </div>
+      </section>
+
+      <footer class="statusbar">
+        <span id="status-label">Load a video to begin</span>
+      </footer>
+    </div>
+
+    <script src="js/app.js" type="module"></script>
+  </body>
+</html>
