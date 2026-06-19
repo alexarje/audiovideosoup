@@ -38,7 +38,8 @@ body {
 .topbar,
 .panel,
 .controls,
-.statusbar {
+.statusbar,
+.url-load {
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 18px;
@@ -91,6 +92,32 @@ body {
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
+}
+
+.url-load {
+  display: flex;
+  gap: 10px;
+  padding: 14px 18px;
+}
+
+.url-load input {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 10px 16px;
+  font: inherit;
+  background: #fff;
+  color: var(--ink);
+}
+
+.url-load input:focus {
+  outline: 2px solid var(--accent-soft);
+  border-color: var(--accent);
+}
+
+.url-load input:disabled {
+  opacity: 0.6;
 }
 
 .btn {
@@ -206,5 +233,9 @@ input[type="range"] {
   .topbar {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .url-load {
+    flex-direction: column;
   }
 }

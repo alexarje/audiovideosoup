@@ -10,6 +10,7 @@ Load a video file, hit play, and watch the image smear into a running average wh
 - **Spectral soup** — real-time magnitude averaging with slowly evolving phase, resynthesized via an AudioWorklet
 - **Live spectrum** — log-scaled frequency display of the processed audio
 - **Tunable controls** — adjust decay, blend, smoothing, phase drift, mix, and output gain while playing
+- **URL loading** — paste a YouTube link or direct media URL (`.mp4`, `.webm`, etc.)
 
 ## Getting started
 
@@ -22,13 +23,21 @@ python3 -m http.server 8080
 
 Then open [http://localhost:8080](http://localhost:8080) in a modern browser.
 
-1. Click **Load media** and choose a video or audio file
+1. Click **Load media** and choose a video or audio file, or paste a **YouTube / direct video URL**
 2. Click **Play** to start visual and audio processing
 3. Use **Reset soup** to clear accumulated visual and spectral state
 
 ## GitHub Pages
 
 The site deploys automatically from the `app/` folder when changes are pushed to `main`.
+
+### Loading from a URL
+
+Paste a **YouTube** link or a **direct media URL** (e.g. `.mp4`, `.webm`) into the URL field and click **Load URL**.
+
+YouTube links are resolved via public [Piped](https://github.com/TeamPiped/Piped) API instances. If a host blocks direct browser access, the app falls back to fetching the file through a CORS proxy so canvas and audio processing still work.
+
+Some platforms block browser-based extraction entirely. If URL loading fails, download the file locally and use **Load media** instead.
 
 ## Controls
 
@@ -57,6 +66,7 @@ app/
   index.html                   UI
   css/style.css                Layout and theme
   js/app.js                    Video averaging, UI, audio graph
+  js/media-url.js              YouTube / URL resolution and fetch
   js/spectral-soup-processor.js   AudioWorklet spectral processor
 ```
 

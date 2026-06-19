@@ -1,6 +1,12 @@
 /**
- * Kistefos Soup — visual frame averaging + spectral audio soup.
+ * AudioVideoSoup — visual frame averaging + spectral audio soup.
  */
+
+import {
+  assertCanvasAccess,
+  fetchMediaBlob,
+  resolveMediaUrl,
+} from "./media-url.js";
 
 const state = {
   video: null,
@@ -9,6 +15,7 @@ const state = {
   soupNode: null,
   analyser: null,
   fileUrl: null,
+  loading: false,
   playing: false,
   rafId: null,
   accum: null,
@@ -34,6 +41,8 @@ function $(id) {
 function bindElements() {
   els.fileInput = $("file-input");
   els.loadBtn = $("load-btn");
+  els.urlInput = $("url-input");
+  els.urlLoadBtn = $("url-load-btn");
   els.playBtn = $("play-btn");
   els.resetBtn = $("reset-btn");
   els.video = $("source-video");
@@ -228,24 +237,121 @@ async function ensureAudioGraph() {
   state.sourceNode.connect(state.soupNode);
 }
 
-async function loadFile(file) {
-  if (!file) return;
-  if (state.fileUrl) URL.revokeObjectURL(state.fileUrl);
+function setLoading(loading) {
+  state.loading = loading;
+  els.loadBtn.disabled = loading;
+  els.urlLoadBtn.disabled = loading;
+  els.urlInput.disabled = loading;
+}
 
-  state.fileUrl = URL.createObjectURL(file);
-  els.video.src = state.fileUrl;
-  els.video.load();
-  setStatus(`Loaded ${file.name}`);
-
-  await new Promise((resolve, reject) => {
-    els.video.onloadedmetadata = resolve;
-    els.video.onerror = reject;
+function waitForVideoEvent(video, eventName) {
+  return new Promise((resolve, reject) => {
+    const onSuccess = () => {
+      cleanup();
+      resolve();
+    };
+    const onError = () => {
+      cleanup();
+      reject(new Error("Could not load media"));
+    };
+    const cleanup = () => {
+      video.removeEventListener(eventName, onSuccess);
+      video.removeEventListener("error", onError);
+    };
+    video.addEventListener(eventName, onSuccess, { once: true });
+    video.addEventListener("error", onError, { once: true });
   });
+}
 
-  resizeSoupCanvas(els.video.videoWidth, els.video.videoHeight);
+function clearMediaSource() {
+  if (state.playing) {
+    els.video.pause();
+    state.playing = false;
+    cancelAnimationFrame(state.rafId);
+    els.playBtn.textContent = "Play";
+  }
+
+  if (state.sourceNode) {
+    state.sourceNode.disconnect();
+    state.sourceNode = null;
+  }
+
+  if (state.fileUrl) {
+    URL.revokeObjectURL(state.fileUrl);
+    state.fileUrl = null;
+  }
+
+  els.video.removeAttribute("src");
+  els.video.load();
+}
+
+async function prepareLoadedMedia(label) {
+  const { videoWidth, videoHeight } = els.video;
+  if (videoWidth && videoHeight) {
+    resizeSoupCanvas(videoWidth, videoHeight);
+  } else {
+    resetVisualSoup();
+  }
+
   resetAudioSoup();
   els.playBtn.disabled = false;
   els.resetBtn.disabled = false;
+  setStatus(`Loaded ${label}`);
+}
+
+async function loadVideoSource(src, label, { ownsBlobUrl = false } = {}) {
+  clearMediaSource();
+
+  if (ownsBlobUrl) state.fileUrl = src;
+  els.video.src = src;
+  els.video.load();
+
+  await waitForVideoEvent(els.video, "loadedmetadata");
+  await prepareLoadedMedia(label);
+}
+
+async function loadFile(file) {
+  if (!file) return;
+
+  setLoading(true);
+  try {
+    const blobUrl = URL.createObjectURL(file);
+    await loadVideoSource(blobUrl, file.name, { ownsBlobUrl: true });
+  } catch (error) {
+    setStatus(`Load error: ${error.message}`);
+  } finally {
+    setLoading(false);
+  }
+}
+
+async function loadFromUrl(input) {
+  setLoading(true);
+  try {
+    setStatus("Resolving URL…");
+    const resolved = await resolveMediaUrl(input);
+    const { streamUrl, title, isAudioOnly } = resolved;
+
+    setStatus(`Loading ${title}…`);
+    els.video.src = streamUrl;
+    els.video.load();
+
+    try {
+      await waitForVideoEvent(els.video, "loadeddata");
+      if (!isAudioOnly) assertCanvasAccess(els.video);
+      await prepareLoadedMedia(title);
+      return;
+    } catch {
+      // Stream may play but block canvas reads, or direct load may fail.
+    }
+
+    const blob = await fetchMediaBlob(streamUrl, setStatus);
+    const blobUrl = URL.createObjectURL(blob);
+    await loadVideoSource(blobUrl, title, { ownsBlobUrl: true });
+  } catch (error) {
+    setStatus(`URL error: ${error.message}`);
+  } finally {
+    setLoading(false);
+  }
 }
 
 async function togglePlay() {
@@ -298,6 +404,19 @@ function bindControls() {
   els.fileInput.addEventListener("change", () => {
     const file = els.fileInput.files?.[0];
     if (file) loadFile(file);
+    els.fileInput.value = "";
+  });
+
+  els.urlLoadBtn.addEventListener("click", () => {
+    const url = els.urlInput.value.trim();
+    if (url) loadFromUrl(url);
+  });
+
+  els.urlInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      const url = els.urlInput.value.trim();
+      if (url) loadFromUrl(url);
+    }
   });
 
   els.playBtn.addEventListener("click", togglePlay);
@@ -356,7 +475,7 @@ function init() {
   bindControls();
   updateSliderLabels();
   initSpectrumCanvas();
-  setStatus("Load a video to begin");
+  setStatus("Load a video file or paste a URL to begin");
 }
 
 init();

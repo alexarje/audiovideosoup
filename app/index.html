@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Kistefos Soup</title>
+    <title>AudioVideoSoup</title>
     <base id="app-base" href="/" />
     <script>
       (function () {
@@ -20,9 +20,9 @@
     <div class="app">
       <header class="topbar">
         <div class="brand">
-          <span class="brand-mark">KS</span>
+          <span class="brand-mark">AV</span>
           <div>
-            <h1>Kistefos Soup</h1>
+            <h1>AudioVideoSoup</h1>
             <p>Visual frame average · spectral audio drift</p>
           </div>
         </div>
@@ -33,6 +33,16 @@
           <button id="reset-btn" class="btn" disabled>Reset soup</button>
         </div>
       </header>
+
+      <section class="url-load">
+        <input
+          id="url-input"
+          type="url"
+          placeholder="Paste a YouTube or direct video URL"
+          spellcheck="false"
+        />
+        <button id="url-load-btn" class="btn">Load URL</button>
+      </section>
 
       <main class="stage">
         <section class="panel panel-soup">
@@ -92,7 +102,7 @@
       </section>
 
       <footer class="statusbar">
-        <span id="status-label">Load a video to begin</span>
+        <span id="status-label">Load a video file or paste a URL to begin</span>
       </footer>
     </div>
 
