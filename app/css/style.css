@@ -167,6 +167,20 @@ body {
   background: linear-gradient(180deg, #fff, #faf7f1);
 }
 
+.panel-soup {
+  position: relative;
+}
+
+#source-video {
+  position: absolute;
+  width: 64px;
+  height: 64px;
+  opacity: 0;
+  pointer-events: none;
+  left: 0;
+  top: 0;
+}
+
 canvas {
   display: block;
   width: 100%;

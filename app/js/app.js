@@ -216,6 +216,17 @@ function drawSpectrum(magnitudes) {
 
 function animationLoop() {
   if (!state.playing) return;
+
+  if ("requestVideoFrameCallback" in els.video) {
+    els.video.requestVideoFrameCallback(() => {
+      if (!state.playing) return;
+      drawSoupFrame();
+      els.timeLabel.textContent = `${formatTime(els.video.currentTime)} / ${formatTime(els.video.duration)}`;
+      animationLoop();
+    });
+    return;
+  }
+
   drawSoupFrame();
   els.timeLabel.textContent = `${formatTime(els.video.currentTime)} / ${formatTime(els.video.duration)}`;
   state.rafId = requestAnimationFrame(animationLoop);
@@ -238,13 +249,10 @@ async function ensureAudioGraph() {
     state.soupNode.connect(state.audioContext.destination);
   }
 
-  if (state.sourceNode) {
-    state.sourceNode.disconnect();
-    state.sourceNode = null;
+  if (!state.sourceNode) {
+    state.sourceNode = state.audioContext.createMediaElementSource(els.video);
+    state.sourceNode.connect(state.soupNode);
   }
-
-  state.sourceNode = state.audioContext.createMediaElementSource(els.video);
-  state.sourceNode.connect(state.soupNode);
 }
 
 function setLoading(loading) {
@@ -293,7 +301,6 @@ function replaceVideoElement() {
   const video = document.createElement("video");
   video.id = oldVideo.id;
   video.playsInline = true;
-  video.hidden = true;
   oldVideo.replaceWith(video);
   els.video = video;
   bindVideoEvents();
@@ -431,6 +438,10 @@ async function loadFromUrl(input) {
 
 function bindVideoEvents() {
   els.video.addEventListener("loadeddata", () => {
+    drawSoupFrame();
+  });
+
+  els.video.addEventListener("playing", () => {
     drawSoupFrame();
   });
 
