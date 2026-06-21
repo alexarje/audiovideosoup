@@ -26,6 +26,7 @@ const state = {
   frameCanvas: null,
   visualDecay: 0.985,
   visualMix: 0.75,
+  visualStack: false,
   spectralSmooth: 0.98,
   phaseSmooth: 0.95,
   phaseDrift: 0.0004,
@@ -53,6 +54,7 @@ function bindElements() {
   els.statusLabel = $("status-label");
   els.visualDecay = $("visual-decay");
   els.visualMix = $("visual-mix");
+  els.visualStack = $("visual-stack");
   els.spectralSmooth = $("spectral-smooth");
   els.phaseSmooth = $("phase-smooth");
   els.phaseDrift = $("phase-drift");
@@ -60,6 +62,7 @@ function bindElements() {
   els.audioGain = $("audio-gain");
   els.visualDecayVal = $("visual-decay-val");
   els.visualMixVal = $("visual-mix-val");
+  els.visualStackVal = $("visual-stack-val");
   els.spectralSmoothVal = $("spectral-smooth-val");
   els.phaseSmoothVal = $("phase-smooth-val");
   els.phaseDriftVal = $("phase-drift-val");
@@ -81,6 +84,7 @@ function setStatus(text) {
 function updateSliderLabels() {
   els.visualDecayVal.textContent = `${Math.round(state.visualDecay * 1000) / 10}%`;
   els.visualMixVal.textContent = `${Math.round(state.visualMix * 100)}%`;
+  els.visualStackVal.textContent = state.visualStack ? "On" : "Off";
   els.spectralSmoothVal.textContent = `${Math.round(state.spectralSmooth * 1000) / 10}%`;
   els.phaseSmoothVal.textContent = `${Math.round(state.phaseSmooth * 1000) / 10}%`;
   els.phaseDriftVal.textContent = state.phaseDrift.toFixed(4);
@@ -146,17 +150,24 @@ function blendFrame(sourceCtx, width, height) {
     const r = data[i];
     const g = data[i + 1];
     const b = data[i + 2];
-    accum[px] = accum[px] * decay + r * blend;
-    accum[px + 1] = accum[px + 1] * decay + g * blend;
-    accum[px + 2] = accum[px + 2] * decay + b * blend;
+
+    if (state.visualStack) {
+      accum[px] = accum[px] * decay + r;
+      accum[px + 1] = accum[px + 1] * decay + g;
+      accum[px + 2] = accum[px + 2] * decay + b;
+    } else {
+      accum[px] = accum[px] * decay + r * blend;
+      accum[px + 1] = accum[px + 1] * decay + g * blend;
+      accum[px + 2] = accum[px + 2] * decay + b * blend;
+    }
   }
 
   const mix = state.visualMix;
   const invMix = 1 - mix;
   for (let i = 0, px = 0; i < data.length; i += 4, px += 3) {
-    out[i] = accum[px] * mix + data[i] * invMix;
-    out[i + 1] = accum[px + 1] * mix + data[i + 1] * invMix;
-    out[i + 2] = accum[px + 2] * mix + data[i + 2] * invMix;
+    out[i] = Math.min(255, accum[px] * mix + data[i] * invMix);
+    out[i + 1] = Math.min(255, accum[px + 1] * mix + data[i + 1] * invMix);
+    out[i + 2] = Math.min(255, accum[px + 2] * mix + data[i + 2] * invMix);
     out[i + 3] = 255;
   }
 
@@ -524,6 +535,12 @@ function bindControls() {
   });
 
   els.playBtn.addEventListener("click", togglePlay);
+  els.visualStack.addEventListener("change", () => {
+    state.visualStack = els.visualStack.checked;
+    updateSliderLabels();
+    resetVisualSoup();
+    drawSoupFrame();
+  });
   els.resetBtn.addEventListener("click", () => {
     resetVisualSoup();
     resetAudioSoup();

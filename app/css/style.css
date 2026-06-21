@@ -223,6 +223,17 @@ label span {
   gap: 12px;
 }
 
+label.checkbox-label {
+  grid-template-columns: 1fr auto;
+  align-items: center;
+}
+
+label.checkbox-label input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent);
+}
+
 label strong {
   font-family: var(--mono);
   color: var(--accent);

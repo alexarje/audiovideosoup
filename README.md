@@ -43,8 +43,9 @@ Some platforms block browser-based extraction entirely. If URL loading fails, do
 
 | Control | What it does |
 | --- | --- |
-| Frame memory | How long video frames linger in the average (higher = slower fade) |
-| Soup blend | Mix between the averaged image and the current frame |
+| Frame memory | In average mode: how long frames linger. In stack mode: fade on the pile (100% = no fade) |
+| Stack frames | Add each new frame on top of the last instead of blending into an average |
+| Soup blend | Mix between the accumulated image and the current frame |
 | Spectral smooth | How quickly the magnitude spectrum adapts |
 | Phase smooth | How quickly phase information changes |
 | Phase drift | Random phase wander for a more ambient texture |
