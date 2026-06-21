@@ -7,9 +7,9 @@ Load a video file, hit play, and watch the image smear into a running average wh
 ## Features
 
 - **Video soup** — exponentially smoothed running average of video frames, blended with the live source
-- **Spectral soup** — real-time magnitude averaging with slowly evolving phase, resynthesized via an AudioWorklet
+- **Spectral soup** — real-time magnitude averaging with source phase preserved, resynthesized via an AudioWorklet
 - **Live spectrum** — log-scaled frequency display of the processed audio
-- **Tunable controls** — adjust decay, blend, smoothing, phase drift, mix, and output gain while playing
+- **Tunable controls** — adjust decay, blend, spectral smoothing, mix, and output gain while playing
 - **URL loading** — paste a YouTube link or direct media URL (`.mp4`, `.webm`, etc.)
 
 ## Getting started
@@ -44,11 +44,9 @@ Some platforms block browser-based extraction entirely. If URL loading fails, do
 | Control | What it does |
 | --- | --- |
 | Frame memory | In average mode: how long frames linger. In stack mode: fade on the pile (100% = no fade) |
-| Stack frames | Add each new frame on top of the last instead of blending into an average |
+| Stack frames | Add each new frame on top of the last; auto-normalizes to prevent blow-out |
 | Soup blend | Mix between the accumulated image and the current frame |
-| Spectral smooth | How quickly the magnitude spectrum adapts |
-| Phase smooth | How quickly phase information changes |
-| Phase drift | Random phase wander for a more ambient texture |
+| Spectral smooth | How quickly the magnitude spectrum adapts (phase stays from the source) |
 | Soup mix | Blend between dry source audio and spectral soup |
 | Output gain | Final output level |
 
@@ -56,7 +54,7 @@ Some platforms block browser-based extraction entirely. If URL loading fails, do
 
 **Video** — each frame's RGB values are blended into a floating-point accumulator. The canvas shows a mix of that accumulator and the current frame.
 
-**Audio** — an `AudioWorkletProcessor` performs STFT analysis, exponentially smooths magnitude bins, applies smoothed and drifting phase, and overlap-add resynthesizes the signal back to the output.
+**Audio** — an `AudioWorkletProcessor` performs STFT analysis, exponentially smooths magnitude bins (with light frequency blurring), and resynthesizes using the source phase so timbre and pitch stay recognizable while the spectrum drifts.
 
 ## Project structure
 

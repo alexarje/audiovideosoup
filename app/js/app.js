@@ -27,11 +27,9 @@ const state = {
   visualDecay: 0.985,
   visualMix: 0.75,
   visualStack: false,
-  spectralSmooth: 0.98,
-  phaseSmooth: 0.95,
-  phaseDrift: 0.0004,
-  audioMix: 0.62,
-  audioGain: 0.95,
+  spectralSmooth: 0.992,
+  audioMix: 0.78,
+  audioGain: 0.92,
 };
 
 const els = {};
@@ -56,16 +54,12 @@ function bindElements() {
   els.visualMix = $("visual-mix");
   els.visualStack = $("visual-stack");
   els.spectralSmooth = $("spectral-smooth");
-  els.phaseSmooth = $("phase-smooth");
-  els.phaseDrift = $("phase-drift");
   els.audioMix = $("audio-mix");
   els.audioGain = $("audio-gain");
   els.visualDecayVal = $("visual-decay-val");
   els.visualMixVal = $("visual-mix-val");
   els.visualStackVal = $("visual-stack-val");
   els.spectralSmoothVal = $("spectral-smooth-val");
-  els.phaseSmoothVal = $("phase-smooth-val");
-  els.phaseDriftVal = $("phase-drift-val");
   els.audioMixVal = $("audio-mix-val");
   els.audioGainVal = $("audio-gain-val");
 }
@@ -86,8 +80,6 @@ function updateSliderLabels() {
   els.visualMixVal.textContent = `${Math.round(state.visualMix * 100)}%`;
   els.visualStackVal.textContent = state.visualStack ? "On" : "Off";
   els.spectralSmoothVal.textContent = `${Math.round(state.spectralSmooth * 1000) / 10}%`;
-  els.phaseSmoothVal.textContent = `${Math.round(state.phaseSmooth * 1000) / 10}%`;
-  els.phaseDriftVal.textContent = state.phaseDrift.toFixed(4);
   els.audioMixVal.textContent = `${Math.round(state.audioMix * 100)}%`;
   els.audioGainVal.textContent = state.audioGain.toFixed(2);
 }
@@ -132,6 +124,18 @@ function ensureAccum(width, height) {
   state.frameBuffer = new Uint8ClampedArray(width * height * 4);
 }
 
+function normalizeStackAccum(accum) {
+  let maxVal = 0;
+  for (let i = 0; i < accum.length; i += 1) {
+    if (accum[i] > maxVal) maxVal = accum[i];
+  }
+  if (maxVal <= 255) return;
+  const scale = 255 / maxVal;
+  for (let i = 0; i < accum.length; i += 1) {
+    accum[i] *= scale;
+  }
+}
+
 function blendFrame(sourceCtx, width, height) {
   ensureAccum(width, height);
   let image;
@@ -162,12 +166,16 @@ function blendFrame(sourceCtx, width, height) {
     }
   }
 
+  if (state.visualStack) {
+    normalizeStackAccum(accum);
+  }
+
   const mix = state.visualMix;
   const invMix = 1 - mix;
   for (let i = 0, px = 0; i < data.length; i += 4, px += 3) {
-    out[i] = Math.min(255, accum[px] * mix + data[i] * invMix);
-    out[i + 1] = Math.min(255, accum[px + 1] * mix + data[i + 1] * invMix);
-    out[i + 2] = Math.min(255, accum[px + 2] * mix + data[i + 2] * invMix);
+    out[i] = accum[px] * mix + data[i] * invMix;
+    out[i + 1] = accum[px + 1] * mix + data[i + 1] * invMix;
+    out[i + 2] = accum[px + 2] * mix + data[i + 2] * invMix;
     out[i + 3] = 255;
   }
 
@@ -508,8 +516,6 @@ async function togglePlay() {
 
 function syncAudioParams() {
   postSoupParam("spectralSmooth", state.spectralSmooth);
-  postSoupParam("phaseSmooth", state.phaseSmooth);
-  postSoupParam("phaseDrift", state.phaseDrift);
   postSoupParam("mix", state.audioMix);
   postSoupParam("gain", state.audioGain);
 }
@@ -551,8 +557,6 @@ function bindControls() {
     ["visualDecay", "visual-decay", (v) => { state.visualDecay = v; }],
     ["visualMix", "visual-mix", (v) => { state.visualMix = v; }],
     ["spectralSmooth", "spectral-smooth", (v) => { state.spectralSmooth = v; postSoupParam("spectralSmooth", v); }],
-    ["phaseSmooth", "phase-smooth", (v) => { state.phaseSmooth = v; postSoupParam("phaseSmooth", v); }],
-    ["phaseDrift", "phase-drift", (v) => { state.phaseDrift = v; postSoupParam("phaseDrift", v); }],
     ["audioMix", "audio-mix", (v) => { state.audioMix = v; postSoupParam("mix", v); }],
     ["audioGain", "audio-gain", (v) => { state.audioGain = v; postSoupParam("gain", v); }],
   ];
