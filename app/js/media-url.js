@@ -1,32 +1,37 @@
 const PIPED_INSTANCES = [
   "https://pipedapi.kavin.rocks",
   "https://pipedapi.adminforge.de",
-  "https://pipedapi.syncpundit.io",
 ];
 
-const INVIDIOUS_INSTANCES_FALLBACK = [
+const INVIDIOUS_INSTANCES = [
+  "https://inv.nadeko.net",
+  "https://invidious.nerdvpn.de",
+  "https://invidious.f5.si",
+  "https://yt.chocolatemoo53.com",
   "https://inv.thepixora.com",
+];
+
+const CORS_PROXIES = [
+  (url) => `https://corsproxy.io/?${encodeURIComponent(url)}`,
+  (url) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
 ];
 
 const DIRECT_MEDIA_PATTERN = /\.(mp4|webm|mov|m4v|mkv|ogv|ogg|mp3|m4a|wav|aac|flac)(\?|#|$)/i;
 
-let invidiousInstancesPromise = null;
-
-async function getInvidiousInstances() {
-  if (!invidiousInstancesPromise) {
-    invidiousInstancesPromise = fetch("https://api.invidious.io/instances.json?sort_by=health")
-      .then((response) => (response.ok ? response.json() : []))
-      .then((entries) => {
-        const discovered = entries
-          .filter(([, meta]) => meta.type === "https" && meta.api)
-          .sort((a, b) => Number(b[1].cors) - Number(a[1].cors))
-          .map(([host]) => `https://${host}`);
-        return [...new Set([...discovered, ...INVIDIOUS_INSTANCES_FALLBACK])];
-      })
-      .catch(() => INVIDIOUS_INSTANCES_FALLBACK);
-  }
-  return invidiousInstancesPromise;
-}
+const MIME_BY_EXT = {
+  mp4: "video/mp4",
+  webm: "video/webm",
+  mov: "video/quicktime",
+  m4v: "video/mp4",
+  mkv: "video/webm",
+  ogv: "video/ogg",
+  ogg: "audio/ogg",
+  mp3: "audio/mpeg",
+  m4a: "audio/mp4",
+  wav: "audio/wav",
+  aac: "audio/aac",
+  flac: "audio/flac",
+};
 
 export function parseYouTubeId(input) {
   try {
@@ -44,6 +49,15 @@ export function parseYouTubeId(input) {
   return null;
 }
 
+function guessMimeType(url, fallback = "video/mp4") {
+  try {
+    const ext = new URL(url).pathname.split(".").pop()?.toLowerCase();
+    return MIME_BY_EXT[ext] ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 function isDirectMediaUrl(input) {
   try {
     const url = new URL(input.trim());
@@ -53,18 +67,38 @@ function isDirectMediaUrl(input) {
   }
 }
 
+async function fetchJson(url) {
+  try {
+    const response = await fetch(url);
+    if (response.ok) return response.json();
+  } catch {
+    // Try CORS proxies when direct fetch is blocked.
+  }
+
+  for (const proxy of CORS_PROXIES) {
+    try {
+      const response = await fetch(proxy(url));
+      if (response.ok) return response.json();
+    } catch {
+      // Try next proxy.
+    }
+  }
+
+  return null;
+}
+
 function pickPipedStream(data) {
-  const combined = (data.videoStreams ?? []).filter((s) => !s.videoOnly);
+  const combined = (data.videoStreams ?? []).filter((s) => !s.videoOnly && s.url);
   if (combined.length) {
     const preferred = ["720p", "480p", "360p", "240p"];
     for (const quality of preferred) {
       const match = combined.find((s) => s.quality === quality);
       if (match) return match;
     }
-    return combined[Math.floor(combined.length / 2)];
+    return combined[0];
   }
 
-  const audio = data.audioStreams?.[0];
+  const audio = (data.audioStreams ?? []).find((s) => s.url);
   if (audio) return { ...audio, isAudioOnly: true };
 
   throw new Error("No playable streams found for this video");
@@ -78,7 +112,7 @@ function pickInvidiousStream(data) {
       const match = combined.find((s) => s.quality === quality || s.qualityLabel === quality);
       if (match) return match;
     }
-    return combined[Math.floor(combined.length / 2)];
+    return combined[0];
   }
 
   const audio = (data.adaptiveFormats ?? []).find((s) => s.type?.startsWith("audio/") && s.url);
@@ -87,21 +121,28 @@ function pickInvidiousStream(data) {
   throw new Error("No playable streams found for this video");
 }
 
+function normalizeStreamResult(stream, title, videoId, source) {
+  const mimeType = stream.mimeType || stream.type || guessMimeType(stream.url);
+  return {
+    streamUrl: stream.url,
+    title: title || `YouTube ${videoId}`,
+    mimeType,
+    isAudioOnly: Boolean(stream.isAudioOnly),
+    remote: true,
+    source,
+  };
+}
+
 async function resolveYouTubeViaInvidious(videoId) {
-  const instances = await getInvidiousInstances();
   let lastError = "Could not reach a video resolver";
 
-  for (const instance of instances) {
+  for (const instance of INVIDIOUS_INSTANCES) {
+    const data = await fetchJson(`${instance}/api/v1/videos/${videoId}`);
+    if (!data?.formatStreams && !data?.adaptiveFormats) continue;
+
     try {
-      const response = await fetch(`${instance}/api/v1/videos/${videoId}`);
-      if (!response.ok) continue;
-      const data = await response.json();
       const stream = pickInvidiousStream(data);
-      return {
-        streamUrl: stream.url,
-        title: data.title || `YouTube ${videoId}`,
-        isAudioOnly: Boolean(stream.isAudioOnly),
-      };
+      return normalizeStreamResult(stream, data.title, videoId, instance);
     } catch (error) {
       lastError = error.message;
     }
@@ -114,16 +155,12 @@ async function resolveYouTubeViaPiped(videoId) {
   let lastError = "Could not reach a video resolver";
 
   for (const instance of PIPED_INSTANCES) {
+    const data = await fetchJson(`${instance}/streams/${videoId}`);
+    if (!data?.videoStreams && !data?.audioStreams) continue;
+
     try {
-      const response = await fetch(`${instance}/streams/${videoId}`);
-      if (!response.ok) continue;
-      const data = await response.json();
       const stream = pickPipedStream(data);
-      return {
-        streamUrl: stream.url,
-        title: data.title || `YouTube ${videoId}`,
-        isAudioOnly: Boolean(stream.isAudioOnly),
-      };
+      return normalizeStreamResult(stream, data.title, videoId, instance);
     } catch (error) {
       lastError = error.message;
     }
@@ -134,7 +171,7 @@ async function resolveYouTubeViaPiped(videoId) {
 
 async function resolveYouTube(videoId) {
   const resolvers = [resolveYouTubeViaInvidious, resolveYouTubeViaPiped];
-  let lastError = "Could not resolve YouTube video";
+  let lastError = "Could not resolve YouTube video. Try downloading the file and using Load media.";
 
   for (const resolve of resolvers) {
     try {
@@ -147,6 +184,15 @@ async function resolveYouTube(videoId) {
   throw new Error(lastError);
 }
 
+export function isDirectCdnUrl(url) {
+  try {
+    const host = new URL(url).hostname;
+    return host.includes("googlevideo.com") || host.endsWith("youtube.com");
+  } catch {
+    return false;
+  }
+}
+
 export async function resolveMediaUrl(input) {
   const trimmed = input.trim();
   if (!trimmed) throw new Error("Enter a URL");
@@ -155,7 +201,12 @@ export async function resolveMediaUrl(input) {
   if (youtubeId) return resolveYouTube(youtubeId);
 
   if (isDirectMediaUrl(trimmed)) {
-    return { streamUrl: trimmed, title: trimmed };
+    return {
+      streamUrl: trimmed,
+      title: trimmed,
+      mimeType: guessMimeType(trimmed),
+      remote: true,
+    };
   }
 
   try {
@@ -163,32 +214,54 @@ export async function resolveMediaUrl(input) {
     if (!["http:", "https:"].includes(url.protocol)) {
       throw new Error("URL must start with http:// or https://");
     }
-    return { streamUrl: trimmed, title: url.hostname };
+    return {
+      streamUrl: trimmed,
+      title: url.hostname,
+      mimeType: guessMimeType(trimmed),
+      remote: true,
+    };
   } catch (error) {
     if (error.message.startsWith("URL must")) throw error;
     throw new Error("Enter a valid URL");
   }
 }
 
-async function fetchViaProxy(url) {
-  const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
-  const response = await fetch(proxyUrl);
-  if (!response.ok) throw new Error(`Proxy fetch failed (${response.status})`);
-  return response.blob();
+async function fetchViaProxies(url) {
+  for (const proxy of CORS_PROXIES) {
+    try {
+      const response = await fetch(proxy(url));
+      if (response.ok) return response;
+    } catch {
+      // Try next proxy.
+    }
+  }
+  throw new Error("Could not download media (proxy fetch failed)");
 }
 
-export async function fetchMediaBlob(streamUrl, onProgress) {
-  onProgress?.("Fetching media…");
+export async function fetchMediaBlob(streamUrl, mimeType, onProgress) {
+  onProgress?.("Downloading media…");
 
+  let response;
   try {
-    const response = await fetch(streamUrl);
-    if (response.ok) return response.blob();
+    response = await fetch(streamUrl);
+    if (!response.ok) response = null;
   } catch {
-    // Fall through to proxy fetch.
+    response = null;
   }
 
-  onProgress?.("Fetching media via proxy…");
-  return fetchViaProxy(streamUrl);
+  if (!response) {
+    onProgress?.("Downloading media via proxy…");
+    response = await fetchViaProxies(streamUrl);
+  }
+
+  const blob = await response.blob();
+  if (blob.size === 0) throw new Error("Downloaded file is empty");
+
+  if (!blob.type && mimeType) {
+    return new Blob([blob], { type: mimeType });
+  }
+
+  return blob;
 }
 
 export function assertCanvasAccess(video) {

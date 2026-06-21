@@ -5,6 +5,7 @@
 import {
   assertCanvasAccess,
   fetchMediaBlob,
+  isDirectCdnUrl,
   resolveMediaUrl,
 } from "./media-url.js";
 
@@ -129,7 +130,12 @@ function ensureAccum(width, height) {
 
 function blendFrame(sourceCtx, width, height) {
   ensureAccum(width, height);
-  const image = sourceCtx.getImageData(0, 0, width, height);
+  let image;
+  try {
+    image = sourceCtx.getImageData(0, 0, width, height);
+  } catch {
+    throw new Error("Cannot read video frames (cross-origin media)");
+  }
   const data = image.data;
   const decay = state.visualDecay;
   const blend = 1 - decay;
@@ -172,7 +178,11 @@ function drawSoupFrame() {
   }
   const frameCtx = state.frameCanvas.getContext("2d");
   frameCtx.drawImage(video, 0, 0, width, height);
-  blendFrame(frameCtx, width, height);
+  try {
+    blendFrame(frameCtx, width, height);
+  } catch (error) {
+    setStatus(error.message);
+  }
 }
 
 function drawSpectrum(magnitudes) {
@@ -244,7 +254,18 @@ function setLoading(loading) {
   els.urlInput.disabled = loading;
 }
 
+const READY_STATE_FOR_EVENT = {
+  loadedmetadata: HTMLMediaElement.HAVE_METADATA,
+  loadeddata: HTMLMediaElement.HAVE_CURRENT_DATA,
+  canplay: HTMLMediaElement.HAVE_FUTURE_DATA,
+};
+
 function waitForVideoEvent(video, eventName) {
+  const needed = READY_STATE_FOR_EVENT[eventName] ?? 0;
+  if (video.readyState >= needed) {
+    return Promise.resolve();
+  }
+
   return new Promise((resolve, reject) => {
     const onSuccess = () => {
       cleanup();
@@ -252,7 +273,11 @@ function waitForVideoEvent(video, eventName) {
     };
     const onError = () => {
       cleanup();
-      reject(new Error("Could not load media"));
+      const code = video.error?.code;
+      const message = code === 4
+        ? "Media format not supported"
+        : "Could not load media";
+      reject(new Error(message));
     };
     const cleanup = () => {
       video.removeEventListener(eventName, onSuccess);
@@ -263,6 +288,24 @@ function waitForVideoEvent(video, eventName) {
   });
 }
 
+function replaceVideoElement() {
+  const oldVideo = els.video;
+  const video = document.createElement("video");
+  video.id = oldVideo.id;
+  video.playsInline = true;
+  video.hidden = true;
+  oldVideo.replaceWith(video);
+  els.video = video;
+  bindVideoEvents();
+}
+
+function resetAudioGraph() {
+  if (state.sourceNode) {
+    state.sourceNode.disconnect();
+    state.sourceNode = null;
+  }
+}
+
 function clearMediaSource() {
   if (state.playing) {
     els.video.pause();
@@ -271,10 +314,7 @@ function clearMediaSource() {
     els.playBtn.textContent = "Play";
   }
 
-  if (state.sourceNode) {
-    state.sourceNode.disconnect();
-    state.sourceNode = null;
-  }
+  resetAudioGraph();
 
   if (state.fileUrl) {
     URL.revokeObjectURL(state.fileUrl);
@@ -282,13 +322,33 @@ function clearMediaSource() {
   }
 
   els.video.removeAttribute("src");
+  els.video.removeAttribute("crossorigin");
   els.video.load();
+}
+
+function configureVideoForSource({ remote = false } = {}) {
+  if (remote) {
+    els.video.crossOrigin = "anonymous";
+  } else {
+    els.video.removeAttribute("crossorigin");
+  }
+}
+
+async function verifyVideoReady({ remote = false } = {}) {
+  await waitForVideoEvent(els.video, "canplay");
+  if (els.video.error) {
+    throw new Error("Media format not supported");
+  }
+  if (remote && els.video.videoWidth) {
+    assertCanvasAccess(els.video);
+  }
 }
 
 async function prepareLoadedMedia(label) {
   const { videoWidth, videoHeight } = els.video;
   if (videoWidth && videoHeight) {
     resizeSoupCanvas(videoWidth, videoHeight);
+    drawSoupFrame();
   } else {
     resetVisualSoup();
   }
@@ -299,14 +359,22 @@ async function prepareLoadedMedia(label) {
   setStatus(`Loaded ${label}`);
 }
 
-async function loadVideoSource(src, label, { ownsBlobUrl = false } = {}) {
-  clearMediaSource();
-
+async function assignVideoSource(src, { remote = false, ownsBlobUrl = false } = {}) {
+  configureVideoForSource({ remote });
   if (ownsBlobUrl) state.fileUrl = src;
   els.video.src = src;
   els.video.load();
-
   await waitForVideoEvent(els.video, "loadedmetadata");
+  await verifyVideoReady({ remote });
+}
+
+async function loadBlobMedia(blob, label, { resetVideo = false } = {}) {
+  if (resetVideo) {
+    clearMediaSource();
+    replaceVideoElement();
+  }
+  const blobUrl = URL.createObjectURL(blob);
+  await assignVideoSource(blobUrl, { remote: false, ownsBlobUrl: true });
   await prepareLoadedMedia(label);
 }
 
@@ -315,8 +383,9 @@ async function loadFile(file) {
 
   setLoading(true);
   try {
-    const blobUrl = URL.createObjectURL(file);
-    await loadVideoSource(blobUrl, file.name, { ownsBlobUrl: true });
+    clearMediaSource();
+    replaceVideoElement();
+    await loadBlobMedia(file, file.name);
   } catch (error) {
     setStatus(`Load error: ${error.message}`);
   } finally {
@@ -327,31 +396,54 @@ async function loadFile(file) {
 async function loadFromUrl(input) {
   setLoading(true);
   try {
+    clearMediaSource();
+    replaceVideoElement();
     setStatus("Resolving URL…");
     const resolved = await resolveMediaUrl(input);
-    const { streamUrl, title, isAudioOnly } = resolved;
+    const { streamUrl, title, mimeType, isAudioOnly } = resolved;
 
     setStatus(`Loading ${title}…`);
-    els.video.src = streamUrl;
-    els.video.load();
+    configureVideoForSource({ remote: true });
 
-    try {
-      await waitForVideoEvent(els.video, "loadeddata");
-      if (!isAudioOnly) assertCanvasAccess(els.video);
-      await prepareLoadedMedia(title);
-      return;
-    } catch {
-      // Stream may play but block canvas reads, or direct load may fail.
+    if (!isDirectCdnUrl(streamUrl)) {
+      els.video.src = streamUrl;
+      els.video.load();
+
+      try {
+        await verifyVideoReady({ remote: true });
+        await prepareLoadedMedia(title);
+        if (isAudioOnly) setStatus(`Loaded ${title} (audio only — no visual soup)`);
+        return;
+      } catch {
+        // Direct stream failed — download and load as blob instead.
+      }
     }
 
-    const blob = await fetchMediaBlob(streamUrl, setStatus);
-    const blobUrl = URL.createObjectURL(blob);
-    await loadVideoSource(blobUrl, title, { ownsBlobUrl: true });
+    replaceVideoElement();
+    const blob = await fetchMediaBlob(streamUrl, mimeType, setStatus);
+    await loadBlobMedia(blob, title);
   } catch (error) {
     setStatus(`URL error: ${error.message}`);
   } finally {
     setLoading(false);
   }
+}
+
+function bindVideoEvents() {
+  els.video.addEventListener("loadeddata", () => {
+    drawSoupFrame();
+  });
+
+  els.video.addEventListener("ended", () => {
+    state.playing = false;
+    cancelAnimationFrame(state.rafId);
+    els.playBtn.textContent = "Play";
+    setStatus("Finished");
+  });
+
+  els.video.addEventListener("seeked", () => {
+    if (!state.playing) drawSoupFrame();
+  });
 }
 
 async function togglePlay() {
@@ -385,6 +477,7 @@ async function togglePlay() {
     state.playing = true;
     els.playBtn.textContent = "Pause";
     setStatus("Simmering…");
+    drawSoupFrame();
     animationLoop();
   } catch (error) {
     setStatus(`Playback error: ${error.message}`);
@@ -444,21 +537,6 @@ function bindControls() {
       updateSliderLabels();
     });
   }
-
-  els.video.addEventListener("loadeddata", () => {
-    drawSoupFrame();
-  });
-
-  els.video.addEventListener("ended", () => {
-    state.playing = false;
-    cancelAnimationFrame(state.rafId);
-    els.playBtn.textContent = "Play";
-    setStatus("Finished");
-  });
-
-  els.video.addEventListener("seeked", () => {
-    if (!state.playing) drawSoupFrame();
-  });
 }
 
 function initSpectrumCanvas() {
@@ -472,6 +550,7 @@ function initSpectrumCanvas() {
 
 function init() {
   bindElements();
+  bindVideoEvents();
   bindControls();
   updateSliderLabels();
   initSpectrumCanvas();
