@@ -26,11 +26,11 @@ const state = {
   frameCanvas: null,
   visualDecay: 0.985,
   visualMix: 0.75,
-  spectralSmooth: 0.965,
-  phaseSmooth: 0.92,
-  phaseDrift: 0.0008,
-  audioMix: 0.55,
-  audioGain: 1.1,
+  spectralSmooth: 0.98,
+  phaseSmooth: 0.95,
+  phaseDrift: 0.0004,
+  audioMix: 0.62,
+  audioGain: 0.95,
 };
 
 const els = {};

@@ -68,6 +68,34 @@ function conjugate(im, size) {
   for (let i = 0; i < size; i += 1) im[i] = -im[i];
 }
 
+function createMellowWeights(binCount, sampleRate, fftSize) {
+  const weights = new Float32Array(binCount);
+  for (let k = 0; k < binCount; k += 1) {
+    const freq = (k * sampleRate) / fftSize;
+    if (freq <= 1200) {
+      weights[k] = 1;
+      continue;
+    }
+    const t = Math.min(1, (freq - 1200) / 5500);
+    weights[k] = 1 - t * t * 0.72;
+  }
+  return weights;
+}
+
+function createDriftWeights(binCount, sampleRate, fftSize) {
+  const weights = new Float32Array(binCount);
+  for (let k = 0; k < binCount; k += 1) {
+    const freq = (k * sampleRate) / fftSize;
+    if (freq <= 1800) {
+      weights[k] = 1;
+      continue;
+    }
+    const t = Math.min(1, (freq - 1800) / 4000);
+    weights[k] = 1 - t * 0.85;
+  }
+  return weights;
+}
+
 class SpectralSoupProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
@@ -88,12 +116,14 @@ class SpectralSoupProcessor extends AudioWorkletProcessor {
 
     this.frame = new ComplexBuffer(FFT_SIZE);
     this.synth = new ComplexBuffer(FFT_SIZE);
+    this.mellowWeight = createMellowWeights(BIN_COUNT, sampleRate, FFT_SIZE);
+    this.driftWeight = createDriftWeights(BIN_COUNT, sampleRate, FFT_SIZE);
 
-    this.spectralSmooth = 0.965;
-    this.phaseSmooth = 0.92;
-    this.phaseDriftRate = 0.0008;
-    this.mix = 0.55;
-    this.gain = 1.1;
+    this.spectralSmooth = 0.98;
+    this.phaseSmooth = 0.95;
+    this.phaseDriftRate = 0.0004;
+    this.mix = 0.62;
+    this.gain = 0.95;
 
     this.port.onmessage = (event) => {
       const { type, value } = event.data;
@@ -146,17 +176,18 @@ class SpectralSoupProcessor extends AudioWorkletProcessor {
       const phase = Math.atan2(im[k], re[k]);
 
       if (!this.hasSpectrum) {
-        this.magAvg[k] = mag;
+        this.magAvg[k] = mag * this.mellowWeight[k];
         this.phaseAvg[k] = phase;
       } else {
-        this.magAvg[k] = smooth * this.magAvg[k] + invSmooth * mag;
+        const weightedMag = mag * this.mellowWeight[k];
+        this.magAvg[k] = smooth * this.magAvg[k] + invSmooth * weightedMag;
         let delta = phase - this.phaseAvg[k];
         while (delta > Math.PI) delta -= 2 * Math.PI;
         while (delta < -Math.PI) delta += 2 * Math.PI;
         this.phaseAvg[k] = phaseBlend * this.phaseAvg[k] + invPhase * (this.phaseAvg[k] + delta);
       }
 
-      this.phaseDrift[k] += (Math.random() - 0.5) * this.phaseDriftRate;
+      this.phaseDrift[k] += (Math.random() - 0.5) * this.phaseDriftRate * this.driftWeight[k];
     }
     this.hasSpectrum = true;
   }

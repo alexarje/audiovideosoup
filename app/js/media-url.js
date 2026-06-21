@@ -1,6 +1,14 @@
-const PIPED_INSTANCES = [
+const PIPED_INSTANCES_FALLBACK = [
+  "https://api.piped.private.coffee",
   "https://pipedapi.kavin.rocks",
-  "https://pipedapi.adminforge.de",
+  "https://pipedapi-libre.kavin.rocks",
+  "https://api.piped.yt",
+  "https://pipedapi.leptons.xyz",
+  "https://pipedapi.nosebs.ru",
+  "https://pipedapi.darkness.services",
+  "https://pipedapi.orangenet.cc",
+  "https://pipedapi.owo.si",
+  "https://pipedapi.ducks.party",
 ];
 
 const INVIDIOUS_INSTANCES = [
@@ -32,6 +40,71 @@ const MIME_BY_EXT = {
   aac: "audio/aac",
   flac: "audio/flac",
 };
+
+let pipedInstancesPromise = null;
+
+async function getPipedInstances() {
+  if (!pipedInstancesPromise) {
+    pipedInstancesPromise = fetch("https://piped-instances.kavin.rocks/")
+      .then(async (response) => {
+        if (!response.ok) return PIPED_INSTANCES_FALLBACK;
+        const data = await parseJsonResponse(response);
+        if (!Array.isArray(data)) return PIPED_INSTANCES_FALLBACK;
+        const discovered = data
+          .map((entry) => entry.api_url?.trim())
+          .filter(Boolean);
+        return [...new Set([...discovered, ...PIPED_INSTANCES_FALLBACK])];
+      })
+      .catch(() => PIPED_INSTANCES_FALLBACK);
+  }
+  return pipedInstancesPromise;
+}
+
+async function parseJsonResponse(response) {
+  const text = await response.text();
+  if (!text.trim()) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+async function fetchJson(url) {
+  const requests = [
+    url,
+    ...CORS_PROXIES.map((proxy) => proxy(url)),
+    `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
+  ];
+
+  for (const requestUrl of requests) {
+    try {
+      const response = await fetch(requestUrl);
+      if (!response.ok) continue;
+
+      const data = await parseJsonResponse(response);
+      if (!data) continue;
+
+      if (typeof data.contents === "string" && data.contents.trim()) {
+        try {
+          return JSON.parse(data.contents);
+        } catch {
+          continue;
+        }
+      }
+
+      if (typeof data === "object") return data;
+    } catch {
+      continue;
+    }
+  }
+
+  return null;
+}
+
+function isResolverError(data) {
+  return Boolean(data?.error || (data?.message && !data?.videoStreams && !data?.formatStreams));
+}
 
 export function parseYouTubeId(input) {
   try {
@@ -65,26 +138,6 @@ function isDirectMediaUrl(input) {
   } catch {
     return false;
   }
-}
-
-async function fetchJson(url) {
-  try {
-    const response = await fetch(url);
-    if (response.ok) return response.json();
-  } catch {
-    // Try CORS proxies when direct fetch is blocked.
-  }
-
-  for (const proxy of CORS_PROXIES) {
-    try {
-      const response = await fetch(proxy(url));
-      if (response.ok) return response.json();
-    } catch {
-      // Try next proxy.
-    }
-  }
-
-  return null;
 }
 
 function pickPipedStream(data) {
@@ -138,7 +191,8 @@ async function resolveYouTubeViaInvidious(videoId) {
 
   for (const instance of INVIDIOUS_INSTANCES) {
     const data = await fetchJson(`${instance}/api/v1/videos/${videoId}`);
-    if (!data?.formatStreams && !data?.adaptiveFormats) continue;
+    if (!data || isResolverError(data)) continue;
+    if (!data.formatStreams && !data.adaptiveFormats) continue;
 
     try {
       const stream = pickInvidiousStream(data);
@@ -152,11 +206,22 @@ async function resolveYouTubeViaInvidious(videoId) {
 }
 
 async function resolveYouTubeViaPiped(videoId) {
+  const instances = await getPipedInstances();
   let lastError = "Could not reach a video resolver";
+  let blockedByYouTube = false;
 
-  for (const instance of PIPED_INSTANCES) {
+  for (const instance of instances) {
     const data = await fetchJson(`${instance}/streams/${videoId}`);
-    if (!data?.videoStreams && !data?.audioStreams) continue;
+    if (!data) continue;
+
+    if (isResolverError(data)) {
+      if (/bot|login_required|sign in/i.test(String(data.message ?? data.error))) {
+        blockedByYouTube = true;
+      }
+      continue;
+    }
+
+    if (!data.videoStreams && !data.audioStreams) continue;
 
     try {
       const stream = pickPipedStream(data);
@@ -166,12 +231,16 @@ async function resolveYouTubeViaPiped(videoId) {
     }
   }
 
+  if (blockedByYouTube) {
+    throw new Error("YouTube blocked the public resolver. Download the video and use Load media.");
+  }
+
   throw new Error(lastError);
 }
 
 async function resolveYouTube(videoId) {
-  const resolvers = [resolveYouTubeViaInvidious, resolveYouTubeViaPiped];
-  let lastError = "Could not resolve YouTube video. Try downloading the file and using Load media.";
+  const resolvers = [resolveYouTubeViaPiped, resolveYouTubeViaInvidious];
+  let lastError = "Could not resolve YouTube video. Download the file and use Load media.";
 
   for (const resolve of resolvers) {
     try {
@@ -230,9 +299,11 @@ async function fetchViaProxies(url) {
   for (const proxy of CORS_PROXIES) {
     try {
       const response = await fetch(proxy(url));
-      if (response.ok) return response;
+      if (response.ok && Number(response.headers.get("content-length") ?? 1) !== 0) {
+        return response;
+      }
     } catch {
-      // Try next proxy.
+      continue;
     }
   }
   throw new Error("Could not download media (proxy fetch failed)");
@@ -241,10 +312,10 @@ async function fetchViaProxies(url) {
 export async function fetchMediaBlob(streamUrl, mimeType, onProgress) {
   onProgress?.("Downloading media…");
 
-  let response;
+  let response = null;
   try {
-    response = await fetch(streamUrl);
-    if (!response.ok) response = null;
+    const direct = await fetch(streamUrl);
+    if (direct.ok) response = direct;
   } catch {
     response = null;
   }
