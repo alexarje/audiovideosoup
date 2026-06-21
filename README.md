@@ -6,7 +6,7 @@ Load a video file, hit play, and watch the image smear into a running average wh
 
 ## Features
 
-- **Visual soup** — exponentially smoothed running average of video frames, blended with the live source
+- **Video soup** — exponentially smoothed running average of video frames, blended with the live source
 - **Spectral soup** — real-time magnitude averaging with slowly evolving phase, resynthesized via an AudioWorklet
 - **Live spectrum** — log-scaled frequency display of the processed audio
 - **Tunable controls** — adjust decay, blend, smoothing, phase drift, mix, and output gain while playing
@@ -43,7 +43,7 @@ Some platforms block browser-based extraction entirely. If URL loading fails, do
 
 | Control | What it does |
 | --- | --- |
-| Frame memory | How long visual frames linger in the average (higher = slower fade) |
+| Frame memory | How long video frames linger in the average (higher = slower fade) |
 | Soup blend | Mix between the averaged image and the current frame |
 | Spectral smooth | How quickly the magnitude spectrum adapts |
 | Phase smooth | How quickly phase information changes |

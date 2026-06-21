@@ -419,7 +419,7 @@ async function loadFromUrl(input) {
       try {
         await verifyVideoReady({ remote: true });
         await prepareLoadedMedia(title);
-        if (isAudioOnly) setStatus(`Loaded ${title} (audio only — no visual soup)`);
+        if (isAudioOnly) setStatus(`Loaded ${title} (audio only — no video soup)`);
         return;
       } catch {
         // Direct stream failed — download and load as blob instead.

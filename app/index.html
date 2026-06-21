@@ -23,7 +23,7 @@
           <span class="brand-mark">AV</span>
           <div>
             <h1>AudioVideoSoup</h1>
-            <p>Visual frame average · spectral audio drift</p>
+            <p>Video frame average · spectral audio drift</p>
           </div>
         </div>
         <div class="topbar-actions">
@@ -47,7 +47,7 @@
       <main class="stage">
         <section class="panel panel-soup">
           <div class="panel-head">
-            <h2>Visual soup</h2>
+            <h2>Video soup</h2>
             <span id="time-label">0:00 / 0:00</span>
           </div>
           <canvas id="soup-canvas" width="960" height="540"></canvas>
@@ -65,10 +65,10 @@
 
       <section class="controls">
         <div class="control-group">
-          <h3>Visual</h3>
+          <h3>Video</h3>
           <label>
             <span>Frame memory <strong id="visual-decay-val">98.5%</strong></span>
-            <input id="visual-decay" type="range" min="0.9" max="0.999" step="0.001" value="0.985" />
+            <input id="visual-decay" type="range" min="0.9" max="1" step="0.001" value="0.985" />
           </label>
           <label>
             <span>Soup blend <strong id="visual-mix-val">75%</strong></span>
