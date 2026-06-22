@@ -195,7 +195,7 @@ class SpectralSoupProcessor extends AudioWorkletProcessor {
     for (let i = 0; i < HOP_SIZE; i += 1) {
       const norm = this.olaNorm[i] > 1e-6 ? this.olaNorm[i] : 1;
       const idx = (this.outputWritePos + i) % this.outputQueue.length;
-      this.outputQueue[idx] = (this.olaBuffer[i] / norm) * this.gain;
+      this.outputQueue[idx] = this.olaBuffer[i] / norm;
       this.olaBuffer[i] = this.olaBuffer[i + HOP_SIZE];
       this.olaNorm[i] = this.olaNorm[i + HOP_SIZE];
     }
@@ -231,7 +231,7 @@ class SpectralSoupProcessor extends AudioWorkletProcessor {
       }
 
       const wet = this.readWetSample();
-      outCh[i] = dry * dryMix + wet * wetMix;
+      outCh[i] = (dry * dryMix + wet * wetMix) * this.gain;
     }
 
     for (let ch = 1; ch < output.length; ch += 1) {
