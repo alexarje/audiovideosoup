@@ -8,6 +8,7 @@ const FFT_SIZE = 2048;
 const HOP_SIZE = 512;
 const BIN_COUNT = FFT_SIZE / 2 + 1;
 const MAG_BLUR_RADIUS = 2;
+const NOISE_GATE_FLOOR = 0.02;
 
 class ComplexBuffer {
   constructor(size) {
@@ -96,9 +97,10 @@ class SpectralSoupProcessor extends AudioWorkletProcessor {
     this.olaBuffer = new Float32Array(FFT_SIZE);
     this.olaNorm = new Float32Array(FFT_SIZE);
 
+    this.specRe = new Float32Array(BIN_COUNT);
+    this.specIm = new Float32Array(BIN_COUNT);
     this.magAvg = new Float32Array(BIN_COUNT);
     this.magScratch = new Float32Array(BIN_COUNT);
-    this.sourcePhase = new Float32Array(BIN_COUNT);
     this.hasSpectrum = false;
 
     this.frame = new ComplexBuffer(FFT_SIZE);
@@ -118,8 +120,9 @@ class SpectralSoupProcessor extends AudioWorkletProcessor {
   }
 
   resetSoup() {
+    this.specRe.fill(0);
+    this.specIm.fill(0);
     this.magAvg.fill(0);
-    this.sourcePhase.fill(0);
     this.hasSpectrum = false;
     this.olaBuffer.fill(0);
     this.olaNorm.fill(0);
@@ -150,14 +153,15 @@ class SpectralSoupProcessor extends AudioWorkletProcessor {
     const invSmooth = 1 - smooth;
 
     for (let k = 0; k < BIN_COUNT; k += 1) {
-      const mag = Math.hypot(re[k], im[k]);
-      this.sourcePhase[k] = Math.atan2(im[k], re[k]);
-
       if (!this.hasSpectrum) {
-        this.magAvg[k] = mag;
+        this.specRe[k] = re[k];
+        this.specIm[k] = im[k];
       } else {
-        this.magAvg[k] = smooth * this.magAvg[k] + invSmooth * mag;
+        this.specRe[k] = smooth * this.specRe[k] + invSmooth * re[k];
+        this.specIm[k] = smooth * this.specIm[k] + invSmooth * im[k];
       }
+
+      this.magAvg[k] = Math.hypot(this.specRe[k], this.specIm[k]);
     }
 
     blurMagnitudes(this.magAvg, this.magScratch, MAG_BLUR_RADIUS);
@@ -169,11 +173,20 @@ class SpectralSoupProcessor extends AudioWorkletProcessor {
     re.fill(0);
     im.fill(0);
 
+    let maxMag = 0;
     for (let k = 0; k < BIN_COUNT; k += 1) {
-      const phase = this.sourcePhase[k];
+      if (this.magAvg[k] > maxMag) maxMag = this.magAvg[k];
+    }
+    const gate = maxMag * NOISE_GATE_FLOOR;
+
+    for (let k = 0; k < BIN_COUNT; k += 1) {
       const mag = this.magAvg[k];
-      re[k] = mag * Math.cos(phase);
-      im[k] = mag * Math.sin(phase);
+      if (mag < gate) continue;
+
+      const prevMag = Math.hypot(this.specRe[k], this.specIm[k]) || 1e-12;
+      const scale = mag / prevMag;
+      re[k] = this.specRe[k] * scale;
+      im[k] = this.specIm[k] * scale;
     }
 
     for (let k = 1; k < FFT_SIZE / 2; k += 1) {
